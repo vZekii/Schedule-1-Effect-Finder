@@ -3,6 +3,8 @@ import collections
 import colorama
 from colorama import Fore, Style, Back
 from heapq import nlargest
+import sys
+import argparse
 
 # --- Colorama Initialization ---
 colorama.init(autoreset=True)  # Automatically resets color after each print
@@ -303,38 +305,38 @@ for target_effect, data in effects_data.items():
     for replaced_effects_list in data.get("replaces", {}).values():
         ALL_VALID_EFFECTS.update(replaced_effects_list)
 
-print(
-    f"{Style.BRIGHT}Discovered {len(ALL_VALID_EFFECTS)} unique valid effects.{C_RESET}"
-)
+# print(
+#     f"{Style.BRIGHT}Discovered {len(ALL_VALID_EFFECTS)} unique valid effects.{C_RESET}"
+# )
 
 
-# --- Validate Multiplier Data ---
-print(f"\n{Style.BRIGHT}Validating Effect Multipliers...{C_RESET}")
-missing_multipliers = []
-invalid_multiplier_keys = []
-for effect in ALL_VALID_EFFECTS:
-    if effect not in EFFECT_MULTIPLIERS:
-        missing_multipliers.append(effect)
-        EFFECT_MULTIPLIERS[effect] = 0.0  # Assign default 0.0
+# # --- Validate Multiplier Data ---
+# print(f"\n{Style.BRIGHT}Validating Effect Multipliers...{C_RESET}")
+# missing_multipliers = []
+# invalid_multiplier_keys = []
+# for effect in ALL_VALID_EFFECTS:
+#     if effect not in EFFECT_MULTIPLIERS:
+#         missing_multipliers.append(effect)
+#         EFFECT_MULTIPLIERS[effect] = 0.0  # Assign default 0.0
 
-for effect_key in EFFECT_MULTIPLIERS.keys():
-    if effect_key not in ALL_VALID_EFFECTS:
-        invalid_multiplier_keys.append(effect_key)
+# for effect_key in EFFECT_MULTIPLIERS.keys():
+#     if effect_key not in ALL_VALID_EFFECTS:
+#         invalid_multiplier_keys.append(effect_key)
 
-if missing_multipliers:
-    print(
-        f"{C_YELLOW}Warning:{C_RESET} Effects missing from multiplier list (assigned 0.0): {C_YELLOW}{sorted(missing_multipliers)}{C_RESET}"
-    )
-else:
-    print(f"{C_GREEN}✓ All valid effects have multiplier entries.{C_RESET}")
+# if missing_multipliers:
+#     print(
+#         f"{C_YELLOW}Warning:{C_RESET} Effects missing from multiplier list (assigned 0.0): {C_YELLOW}{sorted(missing_multipliers)}{C_RESET}"
+#     )
+# else:
+#     print(f"{C_GREEN}✓ All valid effects have multiplier entries.{C_RESET}")
 
-if invalid_multiplier_keys:
-    print(
-        f"{C_RED}Error:{C_RESET} Invalid effect names found as keys in EFFECT_MULTIPLIERS: {C_RED}{sorted(invalid_multiplier_keys)}{C_RESET}"
-    )
-    raise ValueError("Invalid keys found in EFFECT_MULTIPLIERS.")
-else:
-    print(f"{C_GREEN}✓ EFFECT_MULTIPLIERS keys are valid effect names.{C_RESET}")
+# if invalid_multiplier_keys:
+#     print(
+#         f"{C_RED}Error:{C_RESET} Invalid effect names found as keys in EFFECT_MULTIPLIERS: {C_RED}{sorted(invalid_multiplier_keys)}{C_RESET}"
+#     )
+#     raise ValueError("Invalid keys found in EFFECT_MULTIPLIERS.")
+# else:
+#     print(f"{C_GREEN}✓ EFFECT_MULTIPLIERS keys are valid effect names.{C_RESET}")
 
 
 def calculate_product_price(
@@ -389,10 +391,6 @@ def build_ingredient_lookup(data: Dict) -> IngredientLookup:
     return lookup
 
 
-# --- Build Lookup Table (Runs After Effects are Defined/Validated) ---
-ingredient_lookup = build_ingredient_lookup(effects_data)
-
-
 # --- Data Validation Step ---
 def validate_data_effects(data_dict, context_name, valid_set):
     """Checks effects within INGREDIENTS_DATA or effects_data."""
@@ -435,8 +433,8 @@ def validate_data_effects(data_dict, context_name, valid_set):
 
 
 # Perform validation immediately after defining data and ALL_VALID_EFFECTS
-validate_data_effects(INGREDIENTS_DATA, "INGREDIENTS_DATA", ALL_VALID_EFFECTS)
-validate_data_effects(effects_data, "effects_data", ALL_VALID_EFFECTS)
+# validate_data_effects(INGREDIENTS_DATA, "INGREDIENTS_DATA", ALL_VALID_EFFECTS)
+# validate_data_effects(effects_data, "effects_data", ALL_VALID_EFFECTS)
 
 # Build the lookup table once
 ingredient_lookup = build_ingredient_lookup(effects_data)
@@ -683,6 +681,67 @@ def find_shortest_product_sequence(
     return None
 
 
+def apply_ingredients_sequence_optimized(
+    starting_effects: List[str], ingredients: List[str]
+) -> List[str]:
+    """
+    Applies a sequence of ingredients, printing the state after each step.
+    Uses the optimized set-based logic for applying individual ingredients.
+
+    Args:
+        starting_effects: A list of effects present before starting.
+        ingredients: A list of ingredient names to apply in order.
+
+    Returns:
+        A sorted list of the final effects present after applying all ingredients.
+    """
+    # Assume inputs might contain invalid effects/ingredients if called directly
+    # Filter them out for robustness
+    valid_start_effects = {eff for eff in starting_effects if eff in ALL_VALID_EFFECTS}
+    valid_ingredients = [ing for ing in ingredients if ing in ALL_INGREDIENTS]
+
+    current_set = valid_start_effects
+    print(
+        f"Initial Effects: {C_DIM}{sorted(list(current_set)) if current_set else '[]'}{C_RESET}"
+    )
+
+    if not valid_ingredients:
+        print(
+            f"{C_YELLOW}Warning: No valid ingredients in the sequence to apply.{C_RESET}"
+        )
+        return sorted(list(current_set))
+
+    for i, ing in enumerate(valid_ingredients):
+        print(
+            f"\n{Style.BRIGHT}Step {i+1}: Applying ingredient: {C_CYAN}{ing}{C_RESET}"
+        )
+        previous_set = current_set.copy()  # Keep track to see if changes occurred
+        current_set = apply_ingredient_optimized(current_set, ing)
+        changed_effects = current_set != previous_set
+        added = current_set - previous_set
+        removed = previous_set - current_set
+
+        if not changed_effects:
+            print(f"  Result: {C_DIM}(No change){C_RESET}")
+            print(f"  Current Effects: {C_DIM}{sorted(list(current_set))}{C_RESET}")
+
+        else:
+            print(f"  Result: {sorted(list(current_set))}")
+            if added:
+                added_str = f"{', '.join(f'{C_GREEN}{eff}{C_RESET}' for eff in sorted(list(added)))}"
+                print(f"    {C_GREEN}Added:   {added_str}")
+            if removed:
+                removed_str = f"{', '.join(f'{C_RED}{eff}{C_RESET}' for eff in sorted(list(removed)))}"
+                print(f"    {C_RED}Removed: {removed_str}")
+
+    final_sorted_list = sorted(list(current_set))
+    print(
+        f"\n--- {Style.BRIGHT}Final Effects after {len(valid_ingredients)} steps{C_RESET} ---"
+    )
+    print(f"{C_DIM}{final_sorted_list}{C_RESET}")
+    return final_sorted_list
+
+
 def find_most_expensive_products(
     base_product_name: str,
     max_ingredients: int,
@@ -823,8 +882,231 @@ def try_all_ingredients(sequence):
     )
 
 
-if __name__ == "__main__":
-    try_all_ingredients(
-        ["Shrinking", "Zombifying", "Cyclopean", "Anti-Gravity", "Long-Faced"]
+# if __name__ == "__main__":
+#     try_all_ingredients(
+#         ["Shrinking", "Zombifying", "Cyclopean", "Anti-Gravity", "Long-Faced"]
+#     )
+#     find_most_expensive_products("Meth", 8, num_results=10)
+
+
+def run_effects_calculation(
+    sequence: List[str], start_effects: Optional[List[str]], product_name: Optional[str]
+):
+    """Helper function to run and display effect sequence calculation."""
+    # --- Input Validation ---
+    valid_starting_effects = set()
+    if start_effects:
+        invalid_starting = []
+        for effect in start_effects:
+            if effect in ALL_VALID_EFFECTS:
+                valid_starting_effects.add(effect)
+            else:
+                invalid_starting.append(effect)
+        if invalid_starting:
+            print(
+                f"{C_YELLOW}Warning:{C_RESET} Invalid starting effects provided and ignored: {C_RED}{invalid_starting}{C_RESET}"
+            )
+
+    valid_sequence = []
+    invalid_ingredients = []
+    for ingredient in sequence:
+        if ingredient in ALL_INGREDIENTS:
+            valid_sequence.append(ingredient)
+        else:
+            invalid_ingredients.append(ingredient)
+    if invalid_ingredients:
+        print(
+            f"{C_YELLOW}Warning:{C_RESET} Invalid ingredients provided and ignored: {C_RED}{invalid_ingredients}{C_RESET}"
+        )
+
+    if not valid_sequence:
+        print(f"{C_RED}Error: No valid ingredients provided in the sequence.{C_RESET}")
+        return
+
+    start_display_name = (
+        product_name
+        if product_name
+        else ("Empty product" if not valid_starting_effects else "Unnamed product")
     )
-    find_most_expensive_products("Meth", 8, num_results=10)
+
+    print(f"\n{Style.BRIGHT}Calculating Effects{C_RESET}")
+    print(f"  Starting product: {C_YELLOW}{start_display_name}{C_RESET}")
+    if valid_starting_effects:
+        print(
+            f"    {C_DIM}Contains Effects: {sorted(list(valid_starting_effects))}{C_RESET}"
+        )
+    # Use the internal function that prints step-by-step
+    apply_ingredients_sequence_optimized(list(valid_starting_effects), valid_sequence)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description=f"{Style.BRIGHT}Product Calculator CLI{C_RESET}",
+        formatter_class=argparse.RawTextHelpFormatter,  # Allows better formatting in help
+    )
+    subparsers = parser.add_subparsers(
+        dest="command", required=True, help="Action to perform"
+    )
+
+    # --- Subparser: effects ---
+    parser_effects = subparsers.add_parser(
+        "effects", help="Calculate the final effects of an ingredient sequence."
+    )
+    parser_effects.add_argument(
+        "ingredients",
+        metavar="INGREDIENT",
+        nargs="+",  # one or more ingredients
+        help=f'Sequence of ingredients to add (e.g., "Mega Bean" "Energy Drink"). Valid: {sorted(ALL_INGREDIENTS)}',
+    )
+    parser_effects.add_argument(
+        "--start-effects",
+        metavar="EFFECT",
+        nargs="*",  # zero or more
+        default=[],
+        help="Optional list of effects present before adding ingredients.",
+    )
+    parser_effects.add_argument(
+        "--product-name",
+        help="Optional name for the starting product if --start-effects are provided.",
+    )
+
+    # --- Subparser: shortest ---
+    parser_shortest = subparsers.add_parser(
+        "shortest", help="Find the shortest sequence to achieve target effects."
+    )
+    parser_shortest.add_argument(
+        "target_effects",
+        metavar="EFFECT",
+        nargs="+",
+        help="List of desired effects that must be present.",
+    )
+    parser_shortest.add_argument(
+        "--start-effects",
+        metavar="EFFECT",
+        nargs="*",
+        default=None,  # Pass None if not provided
+        help="Optional list of effects present before adding ingredients.",
+    )
+    parser_shortest.add_argument(
+        "--product-name",
+        help="Optional name for the starting product if --start-effects are provided.",
+    )
+    parser_shortest.add_argument(
+        "--max-ingredients",
+        type=int,
+        default=8,
+        help="Maximum number of *additional* ingredients to try (default: 8).",
+    )
+
+    # --- Subparser: expensive ---
+    parser_expensive = subparsers.add_parser(
+        "expensive", help="Find the most expensive products."
+    )
+    parser_expensive.add_argument(
+        "base_product",
+        choices=list(BASE_PRICES.keys()),
+        help="The starting base product.",
+    )
+    parser_expensive.add_argument(
+        "max_ingredients", type=int, help="Maximum number of ingredients to mix."
+    )
+    parser_expensive.add_argument(
+        "--num-results",
+        type=int,
+        default=10,
+        help="Number of top results to display (default: 10).",
+    )
+
+    # --- Subparser: price ---
+    parser_price = subparsers.add_parser(
+        "price", help="Calculate the price for a given base product and effect list."
+    )
+    parser_price.add_argument(
+        "base_product",
+        choices=list(BASE_PRICES.keys()),
+        help="The starting base product.",
+    )
+    parser_price.add_argument(
+        "effects",
+        metavar="EFFECT",
+        nargs="+",
+        help="List of final effects present in the product.",
+    )
+
+    # --- Parse Arguments ---
+    if len(sys.argv) == 1:  # If run with no arguments, print help
+        parser.print_help(sys.stderr)
+        sys.exit(1)
+    args = parser.parse_args()
+
+    # --- Execute Command ---
+    try:  # Wrap in try block to catch validation errors during data loading if not caught earlier
+        if args.command == "effects":
+            # Need apply_ingredients_sequence_optimized or a wrapper
+            run_effects_calculation(
+                args.ingredients, args.start_effects, args.product_name
+            )
+
+        elif args.command == "shortest":
+            find_shortest_product_sequence(
+                target_effects=args.target_effects,
+                starting_effects=args.start_effects,
+                product_name=args.product_name,
+                max_ingredients=args.max_ingredients,
+                # debug_specific_sequence could be added as another arg if needed
+            )
+
+        elif args.command == "expensive":
+            find_most_expensive_products(
+                base_product_name=args.base_product,
+                max_ingredients=args.max_ingredients,
+                num_results=args.num_results,
+            )
+
+        elif args.command == "price":
+            # Validate input effects for price calculation
+            valid_effects = set()
+            invalid_effects = []
+            for effect in args.effects:
+                if effect in ALL_VALID_EFFECTS:
+                    valid_effects.add(effect)
+                else:
+                    invalid_effects.append(effect)
+
+            if invalid_effects:
+                print(
+                    f"{C_YELLOW}Warning:{C_RESET} Invalid effects provided and ignored for price calc: {C_RED}{invalid_effects}{C_RESET}"
+                )
+
+            if not valid_effects:
+                print(
+                    f"{C_RED}Error: No valid effects provided for price calculation.{C_RESET}"
+                )
+            else:
+                final_price = calculate_product_price(args.base_product, valid_effects)
+                if final_price is not None:
+                    print(f"\nCalculating Price:")
+                    print(f"  Base Product: {C_YELLOW}{args.base_product}{C_RESET}")
+                    print(
+                        f"  Effects (valid): {C_DIM}{sorted(list(valid_effects))}{C_RESET}"
+                    )
+                    print(
+                        f"  {Style.BRIGHT}Calculated Price: {C_GREEN}${final_price}{C_RESET}"
+                    )
+
+    except ValueError as e:
+        print(f"\n{Back.RED}{Style.BRIGHT}Runtime Error:{C_RESET} {C_RED}{e}{C_RESET}")
+        sys.exit(1)
+    except Exception as e:
+        print(
+            f"\n{Back.RED}{Style.BRIGHT}An unexpected error occurred:{C_RESET} {C_RED}{e}{C_RESET}"
+        )
+
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    # Any setup that needs to run once can go here (like colorama init)
+
+    # Run the main command-line handler
+    main()
