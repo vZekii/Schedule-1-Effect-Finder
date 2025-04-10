@@ -59,7 +59,7 @@ python main.py expensive Meth 4 --num-results 5
 python main.py expensive Cocaine 3
 ```
 
-### Caclulate price
+### Calculate price
 
 This can be used to determine the price of a product with the provided effects
 
