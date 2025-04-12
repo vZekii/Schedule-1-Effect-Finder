@@ -1,361 +1,29 @@
 from typing import List, Dict, Set, Tuple, NamedTuple, Optional, FrozenSet
 import collections
-import colorama
-from colorama import Fore, Style, Back
 from heapq import nlargest
 import sys
+
 import argparse
+from colorama import Fore, Style, Back
 
-# --- Colorama Initialization ---
-colorama.init(autoreset=True)  # Automatically resets color after each print
-
-# Define some color constants for readability
-C_RESET = Style.RESET_ALL
-C_GREEN = Fore.GREEN
-C_YELLOW = Fore.YELLOW
-C_CYAN = Fore.CYAN
-C_MAGENTA = Fore.MAGENTA
-C_RED = Fore.RED
-C_BLUE = Fore.BLUE
-C_DIM = Style.DIM
+import constants
+from constants import C_RESET, C_GREEN, C_YELLOW, C_CYAN, C_MAGENTA, C_RED, C_BLUE, C_DIM
 
 
-# --- Ingredient Effects Data Structure ---
-# Define a structure for what an ingredient does
-class IngredientAction(NamedTuple):
-    effect_to_add: str
-    effects_to_remove: List[str]
-
-
-# Ingredient name -> List of actions it performs
-IngredientLookup = Dict[str, List[IngredientAction]]
-
-# --- Corrected Base Ingredient Effects ---
-INGREDIENTS_DATA: Dict[str, List[str]] = {
-    "Energy Drink": ["Athletic"],
-    "Mouth Wash": ["Balding"],
-    "Battery": ["Bright-Eyed"],
-    "Donut": ["Calorie-Dense"],
-    "Cuke": ["Energizing"],
-    "Mega Bean": ["Foggy"],
-    "Banana": ["Gingeritis"],
-    "Iodine": ["Jennerising"],
-    "Horse Semen": ["Long-Faced"],
-    "Flu Medicine": ["Sedating"],
-    "Motor Oil": ["Slippery"],
-    "Paracetamol": ["Sneaky"],
-    "Chili": ["Spicy"],
-    "Addy": ["Thought-Provoking"],
-    "Gasoline": ["Toxic"],
-    "Viagra": ["Tropic Thunder"],
-}
-
-# --- Corrected Transformation Rules ---
-# (Insert the large corrected effects_data dictionary from above here)
-#
-effects_data_from_text = {}
-
-
-def add_rule(target_effect, ingredient, replaced_effects):
-    """Helper to add rules, creating dicts/lists as needed."""
-    if target_effect not in effects_data_from_text:
-        effects_data_from_text[target_effect] = {"replaces": {}}
-    if ingredient not in effects_data_from_text[target_effect]["replaces"]:
-        effects_data_from_text[target_effect]["replaces"][ingredient] = []
-
-    # Add effects ensuring no duplicates in the list for a single rule
-    current_list = effects_data_from_text[target_effect]["replaces"][ingredient]
-    for eff in replaced_effects:
-        if eff not in current_list:
-            current_list.append(eff)
-    # Sort for consistency (optional, but helps comparison)
-    # effects_data_from_text[target_effect]["replaces"][ingredient].sort()
-
-
-# --- Process Text List ---
-
-# Cuke
-add_rule("Euphoric", "Cuke", ["Toxic"])
-add_rule("Munchies", "Cuke", ["Slippery"])  # Note: Cuke also -> Athletic if Slippery
-add_rule("Paranoia", "Cuke", ["Sneaky"])
-add_rule("Cyclopean", "Cuke", ["Foggy"])
-add_rule("Thought-Provoking", "Cuke", ["Gingeritis"])
-add_rule("Athletic", "Cuke", ["Munchies"])
-add_rule("Laxative", "Cuke", ["Euphoric"])
-add_rule("Athletic", "Cuke", ["Slippery"])  # Combine with Munchies rule for Athletic
-
-# Flu Medicine
-add_rule("Bright-Eyed", "Flu Medicine", ["Calming"])
-add_rule("Munchies", "Flu Medicine", ["Athletic"])
-add_rule("Gingeritis", "Flu Medicine", ["Thought-Provoking"])
-add_rule("Foggy", "Flu Medicine", ["Cyclopean"])
-add_rule("Slippery", "Flu Medicine", ["Munchies"])
-add_rule("Euphoric", "Flu Medicine", ["Laxative"])
-add_rule("Toxic", "Flu Medicine", ["Euphoric"])
-add_rule("Calming", "Flu Medicine", ["Focused"])
-add_rule("Refreshing", "Flu Medicine", ["Electrifying"])
-add_rule("Paranoia", "Flu Medicine", ["Shrinking"])
-
-# Gasoline
-add_rule("Euphoric", "Gasoline", ["Energizing"])  # Note: Also -> Spicy if Energizing
-add_rule("Smelly", "Gasoline", ["Gingeritis"])
-add_rule("Sneaky", "Gasoline", ["Jennerising"])
-add_rule("Tropic Thunder", "Gasoline", ["Sneaky"])
-add_rule("Sedating", "Gasoline", ["Munchies"])
-add_rule("Spicy", "Gasoline", ["Energizing"])  # Note: Also -> Euphoric if Energizing
-add_rule("Foggy", "Gasoline", ["Laxative"])
-add_rule("Glowing", "Gasoline", ["Disorienting"])
-add_rule("Calming", "Gasoline", ["Paranoia"])
-add_rule("Disorienting", "Gasoline", ["Electrifying"])
-add_rule("Focused", "Gasoline", ["Shrinking"])
-add_rule("Spicy", "Gasoline", ["Euphoric"])  # Combine with Energizing rule for Spicy
-
-# Donut
-add_rule(
-    "Explosive", "Donut", ["Calorie-Dense"]
-)  # Ignoring "(and no Explosive)" for now
-add_rule("Sneaky", "Donut", ["Balding"])
-add_rule("Slippery", "Donut", ["Anti-Gravity"])
-add_rule(
-    "Gingeritis", "Donut", ["Jennerising"]
-)  # Corrected typo Jenerising -> Jennerising
-add_rule("Euphoric", "Donut", ["Focused"])
-add_rule("Energizing", "Donut", ["Shrinking"])
-
-# Energy Drink
-add_rule("Munchies", "Energy Drink", ["Sedating"])
-add_rule("Euphoric", "Energy Drink", ["Spicy"])
-add_rule("Sneaky", "Energy Drink", ["Tropic Thunder"])
-add_rule("Disorienting", "Energy Drink", ["Glowing"])
-add_rule("Laxative", "Energy Drink", ["Foggy"])
-add_rule("Electrifying", "Energy Drink", ["Disorienting"])
-add_rule(
-    "Balding", "Energy Drink", ["Schizophrenic"]
-)  # Corrected typo Schizophrenia -> Schizophrenic
-add_rule("Shrinking", "Energy Drink", ["Focused"])
-
-# Mouth Wash
-add_rule("Anti-Gravity", "Mouth Wash", ["Calming"])
-add_rule("Sneaky", "Mouth Wash", ["Calorie-Dense"])
-add_rule("Sedating", "Mouth Wash", ["Explosive"])
-add_rule("Jennerising", "Mouth Wash", ["Focused"])
-
-# Motor Oil
-add_rule(
-    "Munchies", "Motor Oil", ["Energizing"]
-)  # Note: Also -> Schizophrenic if Energizing
-add_rule("Toxic", "Motor Oil", ["Foggy"])
-add_rule(
-    "Schizophrenic", "Motor Oil", ["Energizing"]
-)  # Note: Also -> Munchies if Energizing
-add_rule("Sedating", "Motor Oil", ["Euphoric"])
-add_rule("Anti-Gravity", "Motor Oil", ["Paranoia"])
-add_rule(
-    "Schizophrenic", "Motor Oil", ["Munchies"]
-)  # Combine with Energizing rule for Schizophrenic
-
-# Banana
-add_rule(
-    "Thought-Provoking", "Banana", ["Energizing"]
-)  # Ignoring "(and no Cyclopean)" Note: Also -> TP if Cyclopean
-add_rule("Sneaky", "Banana", ["Calming"])
-add_rule("Smelly", "Banana", ["Toxic"])
-add_rule("Refreshing", "Banana", ["Long-Faced"])
-add_rule(
-    "Thought-Provoking", "Banana", ["Cyclopean"]
-)  # Combine with Energizing rule for Thought-Provoking
-add_rule("Focused", "Banana", ["Disorienting"])
-add_rule("Seizure-Inducing", "Banana", ["Focused"])
-add_rule("Jennerising", "Banana", ["Paranoia"])
-
-# Chili
-add_rule("Euphoric", "Chili", ["Athletic"])
-add_rule("Tropic Thunder", "Chili", ["Anti-Gravity"])
-add_rule("Bright-Eyed", "Chili", ["Sneaky"])
-add_rule("Toxic", "Chili", ["Munchies"])
-add_rule("Long-Faced", "Chili", ["Laxative"])
-add_rule("Refreshing", "Chili", ["Shrinking"])
-
-# Iodine
-add_rule("Balding", "Iodine", ["Calming"])
-add_rule("Sneaky", "Iodine", ["Toxic"])
-add_rule("Paranoia", "Iodine", ["Foggy"])
-add_rule("Gingeritis", "Iodine", ["Calorie-Dense"])
-add_rule("Seizure-Inducing", "Iodine", ["Euphoric"])
-add_rule("Thought-Provoking", "Iodine", ["Refreshing"])
-
-# Paracetamol
-add_rule("Paranoia", "Paracetamol", ["Energizing"])  # Ignoring "(and no Munchies)"
-add_rule("Slippery", "Paracetamol", ["Calming"])
-add_rule("Tropic Thunder", "Paracetamol", ["Toxic"])
-add_rule("Bright-Eyed", "Paracetamol", ["Spicy"])
-add_rule("Toxic", "Paracetamol", ["Glowing"])
-add_rule("Calming", "Paracetamol", ["Foggy"])
-add_rule("Anti-Gravity", "Paracetamol", ["Munchies"])
-add_rule("Balding", "Paracetamol", ["Paranoia"])
-add_rule("Athletic", "Paracetamol", ["Electrifying"])
-add_rule("Paranoia", "Paracetamol", ["Balding"])
-
-# Viagra
-add_rule("Sneaky", "Viagra", ["Athletic"])
-add_rule("Bright-Eyed", "Viagra", ["Euphoric"])
-add_rule("Calming", "Viagra", ["Laxative"])
-add_rule("Toxic", "Viagra", ["Disorienting"])
-
-# Mega Bean
-add_rule(
-    "Cyclopean", "Mega Bean", ["Energizing"]
-)  # Ignoring "(and no Thought-Provoking)" Note: Also -> Cyclopean if TP
-add_rule("Glowing", "Mega Bean", ["Calming"])  # Note: Also -> Glowing if Sneaky
-add_rule("Calming", "Mega Bean", ["Sneaky"])
-add_rule("Paranoia", "Mega Bean", ["Jennerising"])
-add_rule("Laxative", "Mega Bean", ["Athletic"])
-add_rule("Toxic", "Mega Bean", ["Slippery"])
-add_rule("Energizing", "Mega Bean", ["Thought-Provoking"])
-add_rule("Focused", "Mega Bean", ["Seizure-Inducing"])
-add_rule("Disorienting", "Mega Bean", ["Focused"])
-add_rule("Glowing", "Mega Bean", ["Sneaky"])  # Combine with Calming rule for Glowing
-add_rule(
-    "Cyclopean", "Mega Bean", ["Thought-Provoking"]
-)  # Combine with Energizing rule for Cyclopean
-add_rule("Electrifying", "Mega Bean", ["Shrinking"])
-
-# Addy
-add_rule("Gingeritis", "Addy", ["Sedating"])
-add_rule("Electrifying", "Addy", ["Long-Faced"])  # Corrected "Long Faced"
-add_rule("Refreshing", "Addy", ["Glowing"])
-add_rule("Energizing", "Addy", ["Foggy"])
-add_rule("Euphoric", "Addy", ["Explosive"])
-
-# Battery
-add_rule("Tropic Thunder", "Battery", ["Munchies"])
-add_rule("Zombifying", "Battery", ["Euphoric"])  # Ignoring "(and no Electrifying)"
-add_rule("Euphoric", "Battery", ["Electrifying"])  # Ignoring "(and no Zombifying)"
-add_rule("Calorie-Dense", "Battery", ["Laxative"])
-# add_rule("Euphoric", "Battery", ["Electrifying"]) # Duplicate already handled
-add_rule("Munchies", "Battery", ["Shrinking"])
-
-# Horse Semen (Corrected "Horse Semen")
-add_rule("Calming", "Horse Semen", ["Anti-Gravity"])
-add_rule("Refreshing", "Horse Semen", ["Gingeritis"])
-add_rule("Electrifying", "Horse Semen", ["Thought-Provoking"])
-
-# --- Pricing Data ---
-BASE_PRICES = {
-    "Weed": 35,
-    "Meth": 70,
-    "Cocaine": 150,
-}
-
-# NOTE: Effects missing from the provided table are assigned 0.0 multiplier.
-# Lethal is excluded as it's noted as cheat-only.
-EFFECT_MULTIPLIERS = {
-    "Anti-Gravity": 0.54,
-    "Athletic": 0.32,
-    "Balding": 0.30,
-    "Bright-Eyed": 0.40,
-    "Calming": 0.10,
-    "Calorie-Dense": 0.28,
-    "Cyclopean": 0.56,
-    "Disorienting": 0.00,
-    "Electrifying": 0.50,
-    "Energizing": 0.22,
-    "Euphoric": 0.18,
-    "Explosive": 0.00,
-    "Focused": 0.16,
-    "Foggy": 0.36,
-    "Gingeritis": 0.20,
-    "Glowing": 0.48,
-    "Jennerising": 0.42,
-    "Laxative": 0.00,
-    "Long-Faced": 0.52,
-    "Munchies": 0.12,
-    "Paranoia": 0.00,
-    "Refreshing": 0.14,
-    "Schizophrenic": 0.00,
-    "Sedating": 0.26,
-    "Seizure-Inducing": 0.00,
-    "Shrinking": 0.60,
-    "Slippery": 0.34,
-    "Smelly": 0.00,
-    "Sneaky": 0.24,
-    "Spicy": 0.38,
-    "Thought-Provoking": 0.44,
-    "Toxic": 0.00,
-    "Tropic Thunder": 0.46,
-    "Zombifying": 0.58,
-    # Effects confirmed present in rules but NOT in the provided multiplier table
-    # will be handled by the validation step below (assigned 0.0).
-}
-
-effects_data = effects_data_from_text
-
-# --- Generate Set of All Valid Effects ---
-ALL_VALID_EFFECTS: Set[str] = set()
-
-# 1. Add base effects
-for base_effects_list in INGREDIENTS_DATA.values():
-    ALL_VALID_EFFECTS.update(base_effects_list)
-
-# 2. Add effects from transformation rules
-for target_effect, data in effects_data.items():
-    # Add the effect produced by the transformation
-    ALL_VALID_EFFECTS.add(target_effect)
-    # Add all effects that are replaced by this transformation
-    for replaced_effects_list in data.get("replaces", {}).values():
-        ALL_VALID_EFFECTS.update(replaced_effects_list)
-
-# print(
-#     f"{Style.BRIGHT}Discovered {len(ALL_VALID_EFFECTS)} unique valid effects.{C_RESET}"
-# )
-
-
-# # --- Validate Multiplier Data ---
-# print(f"\n{Style.BRIGHT}Validating Effect Multipliers...{C_RESET}")
-# missing_multipliers = []
-# invalid_multiplier_keys = []
-# for effect in ALL_VALID_EFFECTS:
-#     if effect not in EFFECT_MULTIPLIERS:
-#         missing_multipliers.append(effect)
-#         EFFECT_MULTIPLIERS[effect] = 0.0  # Assign default 0.0
-
-# for effect_key in EFFECT_MULTIPLIERS.keys():
-#     if effect_key not in ALL_VALID_EFFECTS:
-#         invalid_multiplier_keys.append(effect_key)
-
-# if missing_multipliers:
-#     print(
-#         f"{C_YELLOW}Warning:{C_RESET} Effects missing from multiplier list (assigned 0.0): {C_YELLOW}{sorted(missing_multipliers)}{C_RESET}"
-#     )
-# else:
-#     print(f"{C_GREEN}✓ All valid effects have multiplier entries.{C_RESET}")
-
-# if invalid_multiplier_keys:
-#     print(
-#         f"{C_RED}Error:{C_RESET} Invalid effect names found as keys in EFFECT_MULTIPLIERS: {C_RED}{sorted(invalid_multiplier_keys)}{C_RESET}"
-#     )
-#     raise ValueError("Invalid keys found in EFFECT_MULTIPLIERS.")
-# else:
-#     print(f"{C_GREEN}✓ EFFECT_MULTIPLIERS keys are valid effect names.{C_RESET}")
-
-
-def calculate_product_price(
-    base_product_name: str, final_effects: Set[str]
-) -> Optional[int]:
+def calculate_product_price(base_product_name: str, final_effects: Set[str]) -> Optional[int]:
     """Calculates the final product price based on effects."""
 
-    if base_product_name not in BASE_PRICES:
-        print(
-            f"{C_RED}Error: Unknown base product '{base_product_name}'. Valid options: {list(BASE_PRICES.keys())}{C_RESET}"
-        )
+    if base_product_name not in constants.BASE_PRICES:
+        print(f"{C_RED}Error: Unknown base product '{base_product_name}'.")
+        print(f"Valid options: {list(constants.BASE_PRICES.keys())}{C_RESET}")
         return None
 
-    base_price = BASE_PRICES[base_product_name]
+    base_price = constants.BASE_PRICES[base_product_name]
     sum_of_multipliers = 0.0
     unknown_effects_found = []
 
     for effect in final_effects:
-        multiplier = EFFECT_MULTIPLIERS.get(effect)  # Safely get multiplier
+        multiplier = constants.EFFECT_MULTIPLIERS.get(effect)  # Safely get multiplier
         if multiplier is None:
             # This case should be prevented by the validation step, but good practice
             if effect not in unknown_effects_found:  # Avoid duplicate warnings per run
@@ -370,9 +38,9 @@ def calculate_product_price(
     return final_price
 
 
-def build_ingredient_lookup(data: Dict) -> IngredientLookup:
+def build_ingredient_lookup(data: Dict) -> constants.IngredientLookup:
     """Builds the lookup table from the structured effects_data."""
-    lookup: IngredientLookup = {}
+    lookup: constants.IngredientLookup = {}
     for effect_name, effect_data in data.items():
         # ingredients_list = effect_data.get("ingredients", []) # We don't strictly need this list if using replaces
         replaces_dict = effect_data.get("replaces", {})
@@ -380,7 +48,7 @@ def build_ingredient_lookup(data: Dict) -> IngredientLookup:
             # Ensure removes_list is actually a list and not empty
             # (empty list means no transformation defined here)
             if removes_list:
-                action = IngredientAction(
+                action = constants.IngredientAction(
                     effect_to_add=effect_name, effects_to_remove=removes_list
                 )
                 if ingredient not in lookup:
@@ -391,53 +59,8 @@ def build_ingredient_lookup(data: Dict) -> IngredientLookup:
     return lookup
 
 
-# --- Data Validation Step ---
-def validate_data_effects(data_dict, context_name, valid_set):
-    """Checks effects within INGREDIENTS_DATA or effects_data."""
-    errors_found = []
-    if context_name == "INGREDIENTS_DATA":
-        for ingredient, effects in data_dict.items():
-            for effect in effects:
-                if effect not in valid_set:
-                    errors_found.append(
-                        f"Invalid base effect '{C_RED}{effect}{C_RESET}' for ingredient '{C_YELLOW}{ingredient}{C_RESET}' in {context_name}."
-                    )
-    elif context_name == "effects_data":
-        for target_effect, data in data_dict.items():
-            if target_effect not in valid_set:
-                errors_found.append(
-                    f"Invalid target effect '{C_RED}{target_effect}{C_RESET}' used as key in {context_name}."
-                )
-            for ingredient, replaced_effects in data.get("replaces", {}).items():
-                for effect in replaced_effects:
-                    if effect not in valid_set:
-                        errors_found.append(
-                            f"Invalid replaced effect '{C_RED}{effect}{C_RESET}' for target '{C_MAGENTA}{target_effect}{C_RESET}' / ingredient '{C_YELLOW}{ingredient}{C_RESET}' in {context_name}."
-                        )
-    else:
-        raise ValueError(f"Unknown context for validation: {context_name}")
-
-    if errors_found:
-        print(
-            f"\n{Back.RED}{Style.BRIGHT}!--- Validation Errors in Core Data ({context_name}) ---!{C_RESET}"
-        )
-        for error in errors_found:
-            print(f"  - {error}")
-        raise ValueError(
-            f"Invalid effect names found in {context_name}. Please correct the data definitions."
-        )
-    else:
-        print(
-            f"{C_GREEN}✓ Effect names in {context_name} validated successfully.{C_RESET}"
-        )
-
-
-# Perform validation immediately after defining data and ALL_VALID_EFFECTS
-# validate_data_effects(INGREDIENTS_DATA, "INGREDIENTS_DATA", ALL_VALID_EFFECTS)
-# validate_data_effects(effects_data, "effects_data", ALL_VALID_EFFECTS)
-
 # Build the lookup table once
-ingredient_lookup = build_ingredient_lookup(effects_data)
+ingredient_lookup = build_ingredient_lookup(constants.effects_data)
 
 
 # --- Optimized Application Logic ---
@@ -455,7 +78,7 @@ def apply_ingredient_optimized(current_effects: Set[str], ingredient: str) -> Se
     final_effects_set = current_effects.copy()  # Working set, starts same as initial
 
     # 1. Generation Step
-    base_effects_to_add = INGREDIENTS_DATA.get(ingredient, [])
+    base_effects_to_add = constants.INGREDIENTS_DATA.get(ingredient, [])
     final_effects_set.update(base_effects_to_add)
 
     # 2. Transformation Step - Identify based on initial state
@@ -487,7 +110,7 @@ def apply_ingredient_optimized(current_effects: Set[str], ingredient: str) -> Se
 
 
 ALL_INGREDIENTS = sorted(
-    list(INGREDIENTS_DATA.keys())
+    list(constants.INGREDIENTS_DATA.keys())
 )  # Get all possible ingredients once
 
 
@@ -521,7 +144,7 @@ def find_shortest_product_sequence(
     valid_target_effects = []
     invalid_targets = []
     for effect in target_effects:
-        if effect in ALL_VALID_EFFECTS:
+        if effect in constants.ALL_VALID_EFFECTS:
             valid_target_effects.append(effect)
         else:
             invalid_targets.append(effect)
@@ -544,7 +167,7 @@ def find_shortest_product_sequence(
         valid_starting_effects = []
         invalid_starting = []
         for effect in starting_effects:
-            if effect in ALL_VALID_EFFECTS:
+            if effect in constants.ALL_VALID_EFFECTS:
                 valid_starting_effects.append(effect)
             else:
                 invalid_starting.append(effect)
@@ -552,9 +175,7 @@ def find_shortest_product_sequence(
             print(
                 f"{C_YELLOW}Warning:{C_RESET} Invalid starting effects provided and ignored: {C_RED}{invalid_starting}{C_RESET}"
             )
-        initial_effects_set = set(
-            valid_starting_effects
-        )  # Use only valid starting effects
+        initial_effects_set = set(valid_starting_effects)  # Use only valid starting effects
 
     initial_effects_frozen = frozenset(initial_effects_set)
 
@@ -570,9 +191,7 @@ def find_shortest_product_sequence(
     )
     print(f"  Starting product: {C_YELLOW}{start_display_name}{C_RESET}")
     if initial_effects_set:  # Only show effects if they exist
-        print(
-            f"    {C_DIM}Contains Effects: {sorted(list(initial_effects_set))}{C_RESET}"
-        )
+        print(f"    {C_DIM}Contains Effects: {sorted(list(initial_effects_set))}{C_RESET}")
     print(f"  Target Effects:  {C_YELLOW}{sorted(list(target_set))}{C_RESET}")
 
     # --- Initial Check ---
@@ -582,9 +201,7 @@ def find_shortest_product_sequence(
         )
         print(f"  {C_GREEN}Solution Found!{C_RESET}")
         print(f"  Sequence ({C_CYAN}0{C_RESET} added ingredients): []")
-        print(
-            f"  Resulting Effects: {C_DIM}{sorted(list(initial_effects_set))}{C_RESET}"
-        )
+        print(f"  Resulting Effects: {C_DIM}{sorted(list(initial_effects_set))}{C_RESET}")
         return []
 
     # --- Initialize BFS ---
@@ -617,9 +234,7 @@ def find_shortest_product_sequence(
 
         # --- Explore Neighbors ---
         for ingredient in ALL_INGREDIENTS:
-            next_effects_set = apply_ingredient_optimized(
-                current_effects_set, ingredient
-            )
+            next_effects_set = apply_ingredient_optimized(current_effects_set, ingredient)
             next_effects_frozen = frozenset(next_effects_set)
             next_sequence = added_sequence + [ingredient]
 
@@ -639,12 +254,8 @@ def find_shortest_product_sequence(
                 print(f"     Is Solution?: {target_set.issubset(next_effects_set)}")
                 print(f"     Already Visited?: {next_effects_frozen in visited}")
                 if next_effects_frozen in visited:
-                    previous_path = visited_paths.get(
-                        next_effects_frozen, ["(Path not tracked?)"]
-                    )
-                    print(
-                        f"     !!! Visited via sequence: {previous_path} !!!{C_RESET}"
-                    )
+                    previous_path = visited_paths.get(next_effects_frozen, ["(Path not tracked?)"])
+                    print(f"     !!! Visited via sequence: {previous_path} !!!{C_RESET}")
 
             if next_effects_frozen not in visited:
                 visited.add(next_effects_frozen)
@@ -662,9 +273,7 @@ def find_shortest_product_sequence(
                     print(
                         f"  Sequence ({C_MAGENTA}{len(next_sequence)}{C_RESET} added ingredients): {seq_str}"
                     )
-                    print(
-                        f"  Resulting Effects: {C_DIM}{sorted(list(next_effects_set))}{C_RESET}"
-                    )
+                    print(f"  Resulting Effects: {C_DIM}{sorted(list(next_effects_set))}{C_RESET}")
                     return next_sequence
 
                 queue.append((next_effects_frozen, next_sequence))
@@ -697,24 +306,18 @@ def apply_ingredients_sequence_optimized(
     """
     # Assume inputs might contain invalid effects/ingredients if called directly
     # Filter them out for robustness
-    valid_start_effects = {eff for eff in starting_effects if eff in ALL_VALID_EFFECTS}
+    valid_start_effects = {eff for eff in starting_effects if eff in constants.ALL_VALID_EFFECTS}
     valid_ingredients = [ing for ing in ingredients if ing in ALL_INGREDIENTS]
 
     current_set = valid_start_effects
-    print(
-        f"Initial Effects: {C_DIM}{sorted(list(current_set)) if current_set else '[]'}{C_RESET}"
-    )
+    print(f"Initial Effects: {C_DIM}{sorted(list(current_set)) if current_set else '[]'}{C_RESET}")
 
     if not valid_ingredients:
-        print(
-            f"{C_YELLOW}Warning: No valid ingredients in the sequence to apply.{C_RESET}"
-        )
+        print(f"{C_YELLOW}Warning: No valid ingredients in the sequence to apply.{C_RESET}")
         return sorted(list(current_set))
 
     for i, ing in enumerate(valid_ingredients):
-        print(
-            f"\n{Style.BRIGHT}Step {i+1}: Applying ingredient: {C_CYAN}{ing}{C_RESET}"
-        )
+        print(f"\n{Style.BRIGHT}Step {i+1}: Applying ingredient: {C_CYAN}{ing}{C_RESET}")
         previous_set = current_set.copy()  # Keep track to see if changes occurred
         current_set = apply_ingredient_optimized(current_set, ing)
         changed_effects = current_set != previous_set
@@ -728,16 +331,18 @@ def apply_ingredients_sequence_optimized(
         else:
             print(f"  Result: {sorted(list(current_set))}")
             if added:
-                added_str = f"{', '.join(f'{C_GREEN}{eff}{C_RESET}' for eff in sorted(list(added)))}"
+                added_str = (
+                    f"{', '.join(f'{C_GREEN}{eff}{C_RESET}' for eff in sorted(list(added)))}"
+                )
                 print(f"    {C_GREEN}Added:   {added_str}")
             if removed:
-                removed_str = f"{', '.join(f'{C_RED}{eff}{C_RESET}' for eff in sorted(list(removed)))}"
+                removed_str = (
+                    f"{', '.join(f'{C_RED}{eff}{C_RESET}' for eff in sorted(list(removed)))}"
+                )
                 print(f"    {C_RED}Removed: {removed_str}")
 
     final_sorted_list = sorted(list(current_set))
-    print(
-        f"\n--- {Style.BRIGHT}Final Effects after {len(valid_ingredients)} steps{C_RESET} ---"
-    )
+    print(f"\n--- {Style.BRIGHT}Final Effects after {len(valid_ingredients)} steps{C_RESET} ---")
     print(f"{C_DIM}{final_sorted_list}{C_RESET}")
     return final_sorted_list
 
@@ -760,17 +365,15 @@ def find_most_expensive_products(
         [(price, sequence_list, final_effects_set), ...]
     """
 
-    if base_product_name not in BASE_PRICES:
+    if base_product_name not in constants.BASE_PRICES:
         print(
-            f"{C_RED}Error: Unknown base product '{base_product_name}'. Valid options: {list(BASE_PRICES.keys())}{C_RESET}"
+            f"{C_RED}Error: Unknown base product '{base_product_name}'. Valid options: {list(constants.BASE_PRICES.keys())}{C_RESET}"
         )
         return []
 
+    print(f"\n{Style.BRIGHT}Searching for Top {num_results} Most Expensive products{C_RESET}")
     print(
-        f"\n{Style.BRIGHT}Searching for Top {num_results} Most Expensive products{C_RESET}"
-    )
-    print(
-        f"  Base Product:    {C_YELLOW}{base_product_name}{C_RESET} (${BASE_PRICES[base_product_name]})"
+        f"  Base Product:    {C_YELLOW}{base_product_name}{C_RESET} (${constants.BASE_PRICES[base_product_name]})"
     )
     print(f"  Max Ingredients: {C_MAGENTA}{max_ingredients}{C_RESET}")
 
@@ -794,10 +397,21 @@ def find_most_expensive_products(
         # --- Calculate and store price for the *current* state/sequence ---
         # We calculate price for every state reached within the limit
         current_price = calculate_product_price(base_product_name, current_effects_set)
-        if (
-            current_price is not None
-        ):  # Should always be not None if base product is valid
-            all_results.append((current_price, current_sequence, current_effects_set))
+        if current_price is not None:  # Should always be not None if base product is valid
+            total_cost = constants.BASE_PRICES[base_product_name] + sum(
+                [constants.INGREDIENTS_PRICES[ing] for ing in current_sequence]
+            )
+            profit = current_price - total_cost
+            profit_margin = round(profit / total_cost, 2)
+            all_results.append(
+                (
+                    current_price,
+                    current_sequence,
+                    current_effects_set,
+                    profit,
+                    profit_margin,
+                )
+            )
 
         # --- Check Depth Limit ---
         if len(current_sequence) >= max_ingredients:
@@ -806,9 +420,7 @@ def find_most_expensive_products(
         # --- Explore Neighbors ---
         for ingredient in ALL_INGREDIENTS:
             # Calculate next state only once per ingredient transition
-            next_effects_set = apply_ingredient_optimized(
-                current_effects_set, ingredient
-            )
+            next_effects_set = apply_ingredient_optimized(current_effects_set, ingredient)
             next_effects_frozen = frozenset(next_effects_set)
 
             # We only add to the queue if the *state* hasn't been visited
@@ -824,22 +436,27 @@ def find_most_expensive_products(
     # --- Find Top Results ---
     # Use heapq.nlargest for efficiency, especially if all_results is huge
     # Sort key is the price (first element of the tuple)
-    top_results = nlargest(num_results, all_results, key=lambda item: item[0])
+    top_results = nlargest(num_results, all_results, key=lambda item: item[4])
 
     # --- Print Top Results ---
     print(f"\n{Style.BRIGHT}Top {len(top_results)} Results:{C_RESET}")
     if not top_results:
         print(f"  {C_YELLOW}No results found (check max_ingredients).{C_RESET}")
     else:
-        for i, (price, sequence, effects) in enumerate(top_results):
+        for i, (price, sequence, effects, profit, profit_margin) in enumerate(top_results):
             seq_str = (
                 f"[{', '.join(f'{C_CYAN}{ing}{C_RESET}' for ing in sequence)}]"
                 if sequence
                 else "[](Base)"
             )
+            # total_cost = (BASE_PRICES[base_product_name] + sum([INGREDIENTS_PRICES[ing] for ing in sequence]))
+            # profit = price - total_cost
+            # profit_margin = round(profit / total_cost, 2)
             print(f"  {i+1}. Price: {C_GREEN}${price}{C_RESET}")
             print(f"     Sequence ({len(sequence)} ingredients): {seq_str}")
             print(f"     {C_DIM}Effects: {sorted(list(effects))}{C_RESET}")
+            print(f"     Profit: {C_MAGENTA}${profit}{C_RESET}")
+            print(f"     Profit margin: {C_RED}{profit_margin}{C_RESET}")
 
     return top_results
 
@@ -882,13 +499,6 @@ def try_all_ingredients(sequence):
     )
 
 
-# if __name__ == "__main__":
-#     try_all_ingredients(
-#         ["Shrinking", "Zombifying", "Cyclopean", "Anti-Gravity", "Long-Faced"]
-#     )
-#     find_most_expensive_products("Meth", 8, num_results=10)
-
-
 def run_effects_calculation(
     sequence: List[str], start_effects: Optional[List[str]], product_name: Optional[str]
 ):
@@ -898,7 +508,7 @@ def run_effects_calculation(
     if start_effects:
         invalid_starting = []
         for effect in start_effects:
-            if effect in ALL_VALID_EFFECTS:
+            if effect in constants.ALL_VALID_EFFECTS:
                 valid_starting_effects.add(effect)
             else:
                 invalid_starting.append(effect)
@@ -932,9 +542,7 @@ def run_effects_calculation(
     print(f"\n{Style.BRIGHT}Calculating Effects{C_RESET}")
     print(f"  Starting product: {C_YELLOW}{start_display_name}{C_RESET}")
     if valid_starting_effects:
-        print(
-            f"    {C_DIM}Contains Effects: {sorted(list(valid_starting_effects))}{C_RESET}"
-        )
+        print(f"    {C_DIM}Contains Effects: {sorted(list(valid_starting_effects))}{C_RESET}")
     # Use the internal function that prints step-by-step
     apply_ingredients_sequence_optimized(list(valid_starting_effects), valid_sequence)
 
@@ -944,9 +552,7 @@ def main():
         description=f"{Style.BRIGHT}Product Calculator CLI{C_RESET}",
         formatter_class=argparse.RawTextHelpFormatter,  # Allows better formatting in help
     )
-    subparsers = parser.add_subparsers(
-        dest="command", required=True, help="Action to perform"
-    )
+    subparsers = parser.add_subparsers(dest="command", required=True, help="Action to perform")
 
     # --- Subparser: effects ---
     parser_effects = subparsers.add_parser(
@@ -999,12 +605,10 @@ def main():
     )
 
     # --- Subparser: expensive ---
-    parser_expensive = subparsers.add_parser(
-        "expensive", help="Find the most expensive products."
-    )
+    parser_expensive = subparsers.add_parser("expensive", help="Find the most expensive products.")
     parser_expensive.add_argument(
         "base_product",
-        choices=list(BASE_PRICES.keys()),
+        choices=list(constants.BASE_PRICES.keys()),
         help="The starting base product.",
     )
     parser_expensive.add_argument(
@@ -1023,7 +627,7 @@ def main():
     )
     parser_price.add_argument(
         "base_product",
-        choices=list(BASE_PRICES.keys()),
+        choices=list(constants.BASE_PRICES.keys()),
         help="The starting base product.",
     )
     parser_price.add_argument(
@@ -1043,9 +647,7 @@ def main():
     try:  # Wrap in try block to catch validation errors during data loading if not caught earlier
         if args.command == "effects":
             # Need apply_ingredients_sequence_optimized or a wrapper
-            run_effects_calculation(
-                args.ingredients, args.start_effects, args.product_name
-            )
+            run_effects_calculation(args.ingredients, args.start_effects, args.product_name)
 
         elif args.command == "shortest":
             find_shortest_product_sequence(
@@ -1068,7 +670,7 @@ def main():
             valid_effects = set()
             invalid_effects = []
             for effect in args.effects:
-                if effect in ALL_VALID_EFFECTS:
+                if effect in constants.ALL_VALID_EFFECTS:
                     valid_effects.add(effect)
                 else:
                     invalid_effects.append(effect)
@@ -1079,20 +681,14 @@ def main():
                 )
 
             if not valid_effects:
-                print(
-                    f"{C_RED}Error: No valid effects provided for price calculation.{C_RESET}"
-                )
+                print(f"{C_RED}Error: No valid effects provided for price calculation.{C_RESET}")
             else:
                 final_price = calculate_product_price(args.base_product, valid_effects)
                 if final_price is not None:
                     print(f"\nCalculating Price:")
                     print(f"  Base Product: {C_YELLOW}{args.base_product}{C_RESET}")
-                    print(
-                        f"  Effects (valid): {C_DIM}{sorted(list(valid_effects))}{C_RESET}"
-                    )
-                    print(
-                        f"  {Style.BRIGHT}Calculated Price: {C_GREEN}${final_price}{C_RESET}"
-                    )
+                    print(f"  Effects (valid): {C_DIM}{sorted(list(valid_effects))}{C_RESET}")
+                    print(f"  {Style.BRIGHT}Calculated Price: {C_GREEN}${final_price}{C_RESET}")
 
     except ValueError as e:
         print(f"\n{Back.RED}{Style.BRIGHT}Runtime Error:{C_RESET} {C_RED}{e}{C_RESET}")

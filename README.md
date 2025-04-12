@@ -9,7 +9,7 @@ NOTE: You will need Python 3.9 or above, which you can install here: https://www
 1. Download the repository. You can do this by clicking "Code" > Download zip. Or you can clone with git using
 
 ```
-git clone https://github.com/vZekii/Schedule-1-Effect-Finder.git
+git clone https://github.com/con-ji/schedule1_calculator.git
 ```
 
 2. Install the requirements.
@@ -22,7 +22,8 @@ pip install -r requirements.txt
 
 ## Usage
 
-The script features quite a few options. For details on how to use each, you can use --help on each feature
+The script features quite a few options. For details on how to use each, you can use --help on each feature.
+To run the script, first enter the `effect_finder` directory.
 
 ```
 python main.py --help
